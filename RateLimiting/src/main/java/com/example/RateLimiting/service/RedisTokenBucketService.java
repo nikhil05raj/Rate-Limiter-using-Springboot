@@ -49,6 +49,7 @@ public class RedisTokenBucketService {
         return properties.getCapacity();
     }
 
+    // get the available tokens
     public long getAvailableTokens(String clientId)
     {
         String tokenKey = TOKENS_KEY_PREFIX + clientId;
@@ -61,12 +62,13 @@ public class RedisTokenBucketService {
         }
     }
 
-    // purpose is to add tokens based on the elapsed time/interval
+    // purpose is to refill tokens based on the elapsed time/interval
     public void refillTokens(String clientId, Jedis jedis)
     {
         String tokensKey = TOKENS_KEY_PREFIX + clientId;
         String lastRefillKey = LAST_REFILL_KEY_PREFIX + clientId;
 
+        long now = System.currentTimeMillis();
         // getting the last refill time
         String lastRefillStr = jedis.get(lastRefillKey);
 
@@ -76,7 +78,6 @@ public class RedisTokenBucketService {
             jedis.set(lastRefillKey, String.valueOf(now));
         }
 
-        long now = System.currentTimeMillis();
         long lastRefillTime = Long.parseLong(lastRefillStr);
         // calc. the time passed /elapsed
         long elapsedTime = now - lastRefillTime;
@@ -85,12 +86,20 @@ public class RedisTokenBucketService {
             return;
         }
 
-        //if elapsedTime>0 , then calc. how much tokens to add
+        //if elapsedTime>0 , then calc. how many tokens to add
         long tokensToAdd = (elapsedTime * properties.getCapacity())/1000;
 
         if (tokensToAdd <= 0) {
             return;
         }
+
+        String tokenStr = jedis.get(tokensKey);
+
+        long currentTokens = tokenStr != null ? Long.parseLong(tokenStr) : properties.getCapacity();
+        long newTokens = Math.min(properties.getCapacity(), currentTokens+tokensToAdd);
+
+        jedis.set(tokensKey, String.valueOf(newTokens));
+        jedis.set(lastRefillKey, String.valueOf(now));
 
 
 
